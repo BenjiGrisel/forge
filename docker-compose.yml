@@ -1,0 +1,86 @@
+version: '3.8'
+
+# ══════════════════════════════════════════════════════════
+# FORGE — Docker Compose
+# On Hetzner, run alongside existing DMU containers.
+# This adds only the FORGE agent server and Redis.
+# n8n is already running at n8n.digitalmonkey.io.
+# ══════════════════════════════════════════════════════════
+
+services:
+
+  # ── FORGE Agent API Server ────────────────────────────
+  forge:
+    build: .
+    container_name: forge-api
+    restart: unless-stopped
+    ports:
+      - "5001:5000"      # external 5001 → internal 5000 (avoid conflict with existing services)
+    volumes:
+      - /opt/forge/media:/opt/forge/media      # generated video/audio files
+      - /opt/forge/souls:/opt/forge/souls      # private soul files + assets
+      - /opt/forge/creds:/opt/forge/creds      # OAuth tokens
+      - /usr/bin/ffmpeg:/usr/bin/ffmpeg:ro     # host ffmpeg binary
+      - /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:ro  # ffmpeg deps
+    environment:
+      - FORGE_SECRET=${FORGE_SECRET}
+      - FORGE_MEDIA_DIR=/opt/forge/media
+      - FORGE_SOULS_DIR=/opt/forge/souls
+      - FORGE_PORT=5000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-7}
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-elevenlabs}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID_DEFAULT=${ELEVENLABS_VOICE_ID_DEFAULT}
+      - VISUAL_PROVIDER=${VISUAL_PROVIDER:-heygen}
+      - HEYGEN_API_KEY=${HEYGEN_API_KEY}
+      - HEYGEN_AVATAR_ID_DEFAULT=${HEYGEN_AVATAR_ID_DEFAULT}
+      - DID_API_KEY=${DID_API_KEY}
+      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID}
+      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET}
+      - YOUTUBE_TOKEN_PATH=/opt/forge/creds/youtube_token.json
+      - NOTION_API_KEY=${NOTION_API_KEY}
+      - NOTION_VIDEO_REGISTRY_DB=${NOTION_VIDEO_REGISTRY_DB}
+      - NOTION_CONTENT_CALENDAR_DB=${NOTION_CONTENT_CALENDAR_DB}
+      - CEREBRO_WEBHOOK_URL=${CEREBRO_WEBHOOK_URL}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - REDIS_URL=redis://forge-redis:6379
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_PROVIDER=${WHISPER_PROVIDER:-local}
+    depends_on:
+      - redis
+    networks:
+      - forge-net
+      - dmu-net    # connects to existing DMU network so n8n can reach forge-api
+
+  # ── Redis (job state / deduplication) ─────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: forge-redis
+    restart: unless-stopped
+    volumes:
+      - forge-redis-data:/data
+    networks:
+      - forge-net
+
+  # ── Kokoro TTS (local — Phase 3, GPU optional) ────────
+  # Uncomment when ready to switch VOICE_PROVIDER=kokoro
+  # kokoro:
+  #   image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+  #   container_name: forge-kokoro
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8880:8880"
+  #   networks:
+  #     - forge-net
+
+volumes:
+  forge-redis-data:
+
+networks:
+  forge-net:
+    driver: bridge
+  dmu-net:
+    external: true    # existing DMU Docker network — n8n is on this network

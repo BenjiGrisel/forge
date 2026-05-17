@@ -1,0 +1,371 @@
+{
+  "name": "FORGE — Full Channel Pipeline",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "CEREBRO Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400],
+      "parameters": {
+        "path": "forge-run",
+        "httpMethod": "POST",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "credentials": { "httpHeaderAuth": { "id": "forge-secret", "name": "FORGE Secret" } }
+    },
+    {
+      "id": "preflight",
+      "name": "Pre-Flight Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/preflight",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "soul": "={{ $json.body.soul }}",
+          "topic": "={{ $json.body.topic_override }}",
+          "format": "={{ $json.body.format || 'youtube_long' }}"
+        },
+        "options": { "timeout": 30000 }
+      }
+    },
+    {
+      "id": "preflight_check",
+      "name": "Preflight Pass?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 400],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{
+            "id": "go_check",
+            "leftValue": "={{ $json.go }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "equals" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "preflight_fail_notify",
+      "name": "Notify CEREBRO — Preflight Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 560],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CEREBRO_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "event": "forge_preflight_failed",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "blockers": "={{ $('Pre-Flight Check').item.json.blockers }}",
+          "timestamp": "={{ new Date().toISOString() }}"
+        }
+      }
+    },
+    {
+      "id": "registry_init",
+      "name": "Registry — Init VideoID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "channel_id": "={{ $('CEREBRO Webhook Trigger').item.json.body.channel_id }}",
+          "format": "={{ $('CEREBRO Webhook Trigger').item.json.body.format || 'youtube_long' }}"
+        }
+      }
+    },
+    {
+      "id": "scout",
+      "name": "SCOUT — Research Topic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1080, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/scout",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "topic_override": "={{ $('CEREBRO Webhook Trigger').item.json.body.topic_override || null }}"
+        },
+        "options": { "timeout": 60000 }
+      }
+    },
+    {
+      "id": "wordsmith",
+      "name": "WORDSMITH — Generate Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/wordsmith",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "topic": "={{ $('SCOUT — Research Topic').item.json.topic }}",
+          "context": "={{ $('SCOUT — Research Topic').item.json.context }}",
+          "format": "={{ $('CEREBRO Webhook Trigger').item.json.body.format || 'youtube_long' }}"
+        },
+        "options": { "timeout": 90000 }
+      }
+    },
+    {
+      "id": "voice",
+      "name": "VOICE — Generate Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1520, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/voice",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "script": "={{ $('WORDSMITH — Generate Script').item.json.script }}"
+        },
+        "options": { "timeout": 120000 }
+      }
+    },
+    {
+      "id": "visual",
+      "name": "VISUAL — Submit Avatar Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1740, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/visual",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "audio_path": "={{ $('VOICE — Generate Audio').item.json.audio_path }}",
+          "format": "={{ $('CEREBRO Webhook Trigger').item.json.body.format || 'youtube_long' }}"
+        },
+        "options": { "timeout": 60000 }
+      }
+    },
+    {
+      "id": "visual_needs_poll",
+      "name": "Cloud Render? (Poll Required)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1960, 400],
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.polling_required }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "equals" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "wait_render",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2180, 320],
+      "parameters": { "amount": 30, "unit": "seconds" }
+    },
+    {
+      "id": "poll_visual",
+      "name": "Poll — Visual Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2400, 320],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.FORGE_API_URL }}/api/visual/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "video_id", "value": "={{ $('Registry — Init VideoID').item.json.video_id }}" },
+            { "name": "provider_job_id", "value": "={{ $('VISUAL — Submit Avatar Job').item.json.provider_job_id }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      }
+    },
+    {
+      "id": "render_done",
+      "name": "Render Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2620, 320],
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.status }}",
+            "rightValue": "completed",
+            "operator": { "type": "string", "operation": "equals" }
+          }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "editor",
+      "name": "EDITOR — Assemble Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2840, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/editor",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "video_path": "={{ $('VISUAL — Submit Avatar Job').item.json.video_path || null }}",
+          "video_url": "={{ $('Poll — Visual Status').item.json.video_url || null }}",
+          "audio_path": "={{ $('VOICE — Generate Audio').item.json.audio_path }}",
+          "script": "={{ $('WORDSMITH — Generate Script').item.json.script }}",
+          "format": "={{ $('CEREBRO Webhook Trigger').item.json.body.format || 'youtube_long' }}"
+        },
+        "options": { "timeout": 300000 }
+      }
+    },
+    {
+      "id": "herald",
+      "name": "HERALD — Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3060, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FORGE_API_URL }}/api/herald",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Forge-Secret", "value": "={{ $env.FORGE_SECRET }}" }]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "final_path": "={{ $('EDITOR — Assemble Video').item.json.final_path }}",
+          "thumbnail_path": "={{ $('EDITOR — Assemble Video').item.json.thumbnail_path }}",
+          "script": "={{ $('WORDSMITH — Generate Script').item.json.script }}",
+          "channel_id": "={{ $('CEREBRO Webhook Trigger').item.json.body.channel_id }}"
+        },
+        "options": { "timeout": 300000 }
+      }
+    },
+    {
+      "id": "complete_notify",
+      "name": "CEREBRO — Job Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3280, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CEREBRO_WEBHOOK_URL }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "event": "forge_complete",
+          "video_id": "={{ $('Registry — Init VideoID').item.json.video_id }}",
+          "soul": "={{ $('CEREBRO Webhook Trigger').item.json.body.soul }}",
+          "youtube_url": "={{ $('HERALD — Publish').item.json.youtube_url }}",
+          "title": "={{ $('HERALD — Publish').item.json.title }}",
+          "timestamp": "={{ new Date().toISOString() }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "CEREBRO Webhook Trigger": { "main": [[{ "node": "Pre-Flight Check", "type": "main", "index": 0 }]] },
+    "Pre-Flight Check": { "main": [
+      [{ "node": "Preflight Pass?", "type": "main", "index": 0 }]
+    ]},
+    "Preflight Pass?": { "main": [
+      [{ "node": "Registry — Init VideoID", "type": "main", "index": 0 }],
+      [{ "node": "Notify CEREBRO — Preflight Failed", "type": "main", "index": 0 }]
+    ]},
+    "Registry — Init VideoID": { "main": [[{ "node": "SCOUT — Research Topic", "type": "main", "index": 0 }]] },
+    "SCOUT — Research Topic": { "main": [[{ "node": "WORDSMITH — Generate Script", "type": "main", "index": 0 }]] },
+    "WORDSMITH — Generate Script": { "main": [[{ "node": "VOICE — Generate Audio", "type": "main", "index": 0 }]] },
+    "VOICE — Generate Audio": { "main": [[{ "node": "VISUAL — Submit Avatar Job", "type": "main", "index": 0 }]] },
+    "VISUAL — Submit Avatar Job": { "main": [[{ "node": "Cloud Render? (Poll Required)", "type": "main", "index": 0 }]] },
+    "Cloud Render? (Poll Required)": { "main": [
+      [{ "node": "Wait 30s", "type": "main", "index": 0 }],
+      [{ "node": "EDITOR — Assemble Video", "type": "main", "index": 0 }]
+    ]},
+    "Wait 30s": { "main": [[{ "node": "Poll — Visual Status", "type": "main", "index": 0 }]] },
+    "Poll — Visual Status": { "main": [[{ "node": "Render Complete?", "type": "main", "index": 0 }]] },
+    "Render Complete?": { "main": [
+      [{ "node": "EDITOR — Assemble Video", "type": "main", "index": 0 }],
+      [{ "node": "Wait 30s", "type": "main", "index": 0 }]
+    ]},
+    "EDITOR — Assemble Video": { "main": [[{ "node": "HERALD — Publish", "type": "main", "index": 0 }]] },
+    "HERALD — Publish": { "main": [[{ "node": "CEREBRO — Job Complete", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "callerPolicy": "any" },
+  "id": "forge-pipeline-v1",
+  "meta": { "instanceId": "forge", "templateCredsSetupCompleted": true }
+}
