@@ -17,14 +17,14 @@ class VideoRegistry:
         self.notion = Client(auth=NOTION_KEY)
         self.db_id = DB_ID
 
-    def init(self, soul_name: str, channel_id: str, format: str) -> str:
+    def init(self, soul_name: str, channel_id: str = '', format: str = 'youtube_long') -> str:
         video_id = str(uuid.uuid4())[:8].upper()
         self.notion.pages.create(
             parent={'database_id': self.db_id},
             properties={
                 'VideoID': {'title': [{'text': {'content': video_id}}]},
                 'Soul': {'rich_text': [{'text': {'content': soul_name}}]},
-                'ChannelID': {'rich_text': [{'text': {'content': channel_id}}]},
+                'ChannelID': {'rich_text': [{'text': {'content': channel_id or ''}}]},
                 'Format': {'select': {'name': format}},
                 'Status': {'select': {'name': 'queued'}},
                 'CreatedAt': {'date': {'start': datetime.utcnow().isoformat()}},
