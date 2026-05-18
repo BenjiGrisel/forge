@@ -16,3 +16,5 @@ __pycache__/
 *.srt
 venv/
 .venv/
+auth_url.txt
+auth_code.txt
