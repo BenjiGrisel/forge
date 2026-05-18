@@ -20,8 +20,6 @@ services:
       - /opt/forge/media:/opt/forge/media      # generated video/audio files
       - /opt/forge/souls:/opt/forge/souls      # private soul files + assets
       - /opt/forge/creds:/opt/forge/creds      # OAuth tokens
-      - /usr/bin/ffmpeg:/usr/bin/ffmpeg:ro     # host ffmpeg binary
-      - /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:ro  # ffmpeg deps
     environment:
       - FORGE_SECRET=${FORGE_SECRET}
       - FORGE_MEDIA_DIR=/opt/forge/media

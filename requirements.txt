@@ -6,7 +6,7 @@ google-api-python-client==2.134.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 requests==2.32.3
-openai-whisper==20240930
+# openai-whisper — install separately if local transcription needed (requires torch)
 pyyaml==6.0.2
 redis==5.0.7
 python-dotenv==1.0.1

@@ -8,7 +8,6 @@ import os
 import subprocess
 import logging
 import requests
-import whisper
 from core.registry import VideoRegistry
 
 log = logging.getLogger('forge.editor')
@@ -68,6 +67,7 @@ class Editor:
     def _captions(self, audio_path: str, job_dir: str, script: str) -> str:
         srt_path = os.path.join(job_dir, 'captions.srt')
         if WHISPER_PROVIDER == 'local':
+            import whisper  # optional dep — install openai-whisper separately if needed
             model = whisper.load_model(WHISPER_MODEL)
             result = model.transcribe(audio_path, word_timestamps=True)
             with open(srt_path, 'w', encoding='utf-8') as f:
