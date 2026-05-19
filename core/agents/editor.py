@@ -1,7 +1,7 @@
 """
 EDITOR — FFmpeg assembly agent.
 Downloads video (if cloud), generates captions, burns them in,
-adds intro/outro, produces 16:9 master and 9:16 short clip.
+adds disclaimer card, produces 16:9 master and 9:16 short clip.
 """
 
 import os
@@ -16,6 +16,22 @@ MEDIA_DIR = os.getenv('FORGE_MEDIA_DIR', '/opt/forge/media')
 ASSETS_DIR = os.getenv('FORGE_SOULS_DIR', '/opt/forge/souls') + '/assets'
 WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
 WHISPER_PROVIDER = os.getenv('WHISPER_PROVIDER', 'local')
+
+# Dimensions per format
+_FORMAT_DIMS = {
+    'youtube_long': (1920, 1080),
+    'linkedin': (1920, 1080),
+    'youtube_short': (1080, 1920),
+    'tiktok': (1080, 1920),
+    'reels': (1080, 1920),
+}
+
+DISCLAIMER_LINES = [
+    "DISCLAIMER",
+    "This content is for educational and informational purposes only.",
+    "It does not constitute legal advice and should not be relied upon as such.",
+    "Consult a licensed attorney for advice specific to your situation.",
+]
 
 
 class Editor:
@@ -35,14 +51,20 @@ class Editor:
         srt_path = self._captions(audio_path=audio_path, job_dir=job_dir, script=script)
 
         # Assemble final — burn captions only when we have properly timed SRT
-        final_path = os.path.join(job_dir, 'final.mp4')
+        assembled_path = os.path.join(job_dir, 'assembled.mp4')
         if srt_path:
-            self._burn_captions(video_path=video_path, srt_path=srt_path, out_path=final_path)
+            self._burn_captions(video_path=video_path, srt_path=srt_path, out_path=assembled_path)
         else:
-            self._copy_video(video_path=video_path, out_path=final_path)
+            self._copy_video(video_path=video_path, out_path=assembled_path)
+
+        # Append legal disclaimer end card
+        w, h = _FORMAT_DIMS.get(format, (1920, 1080))
+        card_path = self._disclaimer_card(job_dir=job_dir, width=w, height=h)
+        final_path = os.path.join(job_dir, 'final.mp4')
+        self._concat_videos([assembled_path, card_path], final_path)
 
         # Generate thumbnail
-        thumb_path = self._thumbnail(video_path=video_path, job_dir=job_dir)
+        thumb_path = self._thumbnail(video_path=assembled_path, job_dir=job_dir)
 
         # Short clip for Shorts/TikTok (first 60 seconds if long-form)
         short_path = None
@@ -114,6 +136,49 @@ class Editor:
         ]
         self._run(cmd)
         return short_path
+
+    def _disclaimer_card(self, job_dir: str, width: int, height: int) -> str:
+        card_path = os.path.join(job_dir, 'disclaimer_card.mp4')
+        # Build stacked drawtext filters — one per line, centered vertically
+        line_spacing = 60
+        total_h = len(DISCLAIMER_LINES) * line_spacing
+        drawtext_parts = []
+        for i, line in enumerate(DISCLAIMER_LINES):
+            escaped = line.replace('\\', '\\\\').replace("'", "\\'").replace(':', '\\:')
+            size = 44 if i == 0 else 30
+            y = f"(h-{total_h})/2+{i * line_spacing}"
+            drawtext_parts.append(
+                f"drawtext=text='{escaped}':fontcolor=white:fontsize={size}"
+                f":x=(w-text_w)/2:y={y}"
+            )
+        vf = ','.join(drawtext_parts)
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'lavfi', '-i', f'color=black:size={width}x{height}:rate=30',
+            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+            '-vf', vf,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-t', '5',
+            card_path,
+        ]
+        self._run(cmd)
+        return card_path
+
+    def _concat_videos(self, video_paths: list, out_path: str):
+        list_path = out_path + '.txt'
+        with open(list_path, 'w') as f:
+            for p in video_paths:
+                f.write(f"file '{p}'\n")
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat', '-safe', '0', '-i', list_path,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            out_path,
+        ]
+        self._run(cmd)
+        os.remove(list_path)
 
     def _copy_video(self, video_path: str, out_path: str):
         cmd = [
