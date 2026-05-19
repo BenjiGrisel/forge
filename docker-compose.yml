@@ -51,7 +51,9 @@ services:
       - redis
     networks:
       - forge-net
-      - dmu-net    # connects to existing DMU network so n8n can reach forge-api
+      - dmu-net    # connects to existing DMU network (dmu-net external)
+      # NOTE: n8n also needs app_forge-net added to its service in /opt/dmu/docker-compose.yml
+      # so it can resolve 'forge-api' hostname. See dmu docker-compose for the external network entry.
 
   # ── Redis (job state / deduplication) ─────────────────
   redis:
