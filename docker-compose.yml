@@ -47,6 +47,7 @@ services:
       - REDIS_URL=redis://forge-redis:6379
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - WHISPER_PROVIDER=${WHISPER_PROVIDER:-local}
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "1800", "app:app"]
     depends_on:
       - redis
     networks:
