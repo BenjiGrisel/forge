@@ -125,8 +125,9 @@ def editor():
     data = request.json
     wd = Watchdog('editor')
     result = wd.run(Editor().assemble, video_id=data['video_id'], soul_name=data['soul'],
-                    video_path=data['video_path'], audio_path=data['audio_path'],
-                    script=data['script'], format=data.get('format', 'youtube_long'))
+                    video_path=data.get('video_path'), audio_path=data['audio_path'],
+                    script=data['script'], format=data.get('format', 'youtube_long'),
+                    video_url=data.get('video_url'))
     return jsonify(result)
 
 
