@@ -31,12 +31,15 @@ class Editor:
         if not video_path and video_url:
             video_path = self._download(video_url, os.path.join(job_dir, 'avatar_raw.mp4'))
 
-        # Generate captions from audio
+        # Generate captions (None when Whisper unavailable — skip overlay)
         srt_path = self._captions(audio_path=audio_path, job_dir=job_dir, script=script)
 
-        # Burn captions + assemble final
+        # Assemble final — burn captions only when we have properly timed SRT
         final_path = os.path.join(job_dir, 'final.mp4')
-        self._burn_captions(video_path=video_path, srt_path=srt_path, out_path=final_path)
+        if srt_path:
+            self._burn_captions(video_path=video_path, srt_path=srt_path, out_path=final_path)
+        else:
+            self._copy_video(video_path=video_path, out_path=final_path)
 
         # Generate thumbnail
         thumb_path = self._thumbnail(video_path=video_path, job_dir=job_dir)
@@ -64,18 +67,15 @@ class Editor:
                 f.write(chunk)
         return out_path
 
-    def _captions(self, audio_path: str, job_dir: str, script: str) -> str:
+    def _captions(self, audio_path: str, job_dir: str, script: str):
+        if WHISPER_PROVIDER != 'local':
+            return None  # No timed transcript; skip subtitle overlay to keep avatar visible
+        import whisper  # optional dep — install openai-whisper separately if needed
         srt_path = os.path.join(job_dir, 'captions.srt')
-        if WHISPER_PROVIDER == 'local':
-            import whisper  # optional dep — install openai-whisper separately if needed
-            model = whisper.load_model(WHISPER_MODEL)
-            result = model.transcribe(audio_path, word_timestamps=True)
-            with open(srt_path, 'w', encoding='utf-8') as f:
-                f.write(self._to_srt(result['segments']))
-        else:
-            # Fallback: write script as one block (no timestamps)
-            with open(srt_path, 'w', encoding='utf-8') as f:
-                f.write(f"1\n00:00:00,000 --> 00:59:00,000\n{script}\n")
+        model = whisper.load_model(WHISPER_MODEL)
+        result = model.transcribe(audio_path, word_timestamps=True)
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            f.write(self._to_srt(result['segments']))
         return srt_path
 
     def _burn_captions(self, video_path: str, srt_path: str, out_path: str):
@@ -114,6 +114,15 @@ class Editor:
         ]
         self._run(cmd)
         return short_path
+
+    def _copy_video(self, video_path: str, out_path: str):
+        cmd = [
+            'ffmpeg', '-y', '-i', video_path,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            out_path
+        ]
+        self._run(cmd)
 
     def _run(self, cmd: list):
         result = subprocess.run(cmd, capture_output=True, text=True)
