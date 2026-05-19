@@ -102,14 +102,15 @@ class VisualAgent:
 
     def _upload_audio_heygen(self, audio_path: str) -> str:
         with open(audio_path, 'rb') as f:
-            r = requests.post(
-                'https://upload.heygen.com/v1/asset',
-                files={'file': ('voice.mp3', f, 'audio/mpeg')},
-                headers={'X-Api-Key': HEYGEN_KEY},
-                timeout=60,
-            )
+            data = f.read()
+        r = requests.post(
+            'https://upload.heygen.com/v1/asset',
+            data=data,
+            headers={'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg'},
+            timeout=120,
+        )
         if not r.ok:
-            raise RuntimeError(f"HeyGen audio upload failed: {r.status_code}")
+            raise RuntimeError(f"HeyGen audio upload failed: {r.status_code} {r.text[:300]}")
         return r.json()['data']['url']
 
     # ── D-ID ──────────────────────────────────────────────────
